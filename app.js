@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
-const md5 = require("md5");
+const bcrypt = require("bcrypt");
 
 const app = express();
 
@@ -40,8 +40,10 @@ app.route("/login")
     if(err) console.log(err);
     else {
       if(user) {
-        if(user.password === md5(req.body.password)) res.render("secrets");
-        else console.log("Invalid password");
+        bcrypt.compare(req.body.password, user.password, function(err, result) {
+          if(result === true) res.render("secrets");
+          else console.log("Invalid password");
+        });
       }
       else console.log("Invalid username");
     }
@@ -57,14 +59,16 @@ app.route("/register")
 })
 
 .post((req, res) => {
-  const user = new User({
-    username: req.body.username,
-    password: md5(req.body.password)
-  });
+  bcrypt.hash(req.body.password, 10, function(err, hash) {
+    const user = new User({
+      username: req.body.username,
+      password: hash
+    });
 
-  user.save((err) => {
-    if(err) console.log(err);
-    else res.render("secrets");
+    user.save((err) => {
+      if(err) console.log(err);
+      else res.render("secrets");
+    });
   });
 });
 
