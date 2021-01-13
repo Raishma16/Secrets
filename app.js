@@ -2,7 +2,9 @@ require("dotenv").config();
 const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
-const bcrypt = require("bcrypt");
+const session = require("express-session");
+const passport = require("passport");
+const passportLocalMongoose = require("passport-local-mongoose");
 
 const app = express();
 
@@ -10,6 +12,14 @@ app.set("view engine", "ejs");
 
 app.use(bodyParser.urlencoded({extended: true}));
 app.use(express.static("public"));
+
+app.use(session({
+  secret: 'Our little secret.',
+  resave: false,
+  saveUninitialized: true
+}));
+app.use(passport.initialize());
+app.use(passport.session());
 
 mongoose.connect("mongodb://localhost:27017/usersDB", { useNewUrlParser: true, useUnifiedTopology: true }, err => {
   if(err) console.log(err);
@@ -21,7 +31,14 @@ const userSchema = new mongoose.Schema({
   password: String
 });
 
+userSchema.plugin(passportLocalMongoose);
+
 const User = new mongoose.model("User", userSchema);
+
+passport.use(User.createStrategy());
+
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
 
 app.get("/", (req, res) => {
   res.render("home");
@@ -36,18 +53,18 @@ app.route("/login")
 })
 
 .post((req, res) => {
-  User.findOne({username: req.body.username}, (err, user) => {
+  const user = new User({
+    username: req.body.username,
+    password: req.body.password
+  });
+  req.login(user, err => {
     if(err) console.log(err);
     else {
-      if(user) {
-        bcrypt.compare(req.body.password, user.password, function(err, result) {
-          if(result === true) res.render("secrets");
-          else console.log("Invalid password");
-        });
-      }
-      else console.log("Invalid username");
+      passport.authenticate("local")(req, res, () => {
+        res.redirect("/secrets");
+      });
     }
-  });
+  })
 });
 
 /**************************** REGISTER APIs ****************************/
@@ -59,19 +76,29 @@ app.route("/register")
 })
 
 .post((req, res) => {
-  bcrypt.hash(req.body.password, 10, function(err, hash) {
-    const user = new User({
-      username: req.body.username,
-      password: hash
-    });
-
-    user.save((err) => {
-      if(err) console.log(err);
-      else res.render("secrets");
-    });
+  User.register({username: req.body.username}, req.body.password, (err, user) => {
+    if(err) {
+      console.log(err);
+      res.redirect("/register");
+    }
+    else {
+      passport.authenticate("local")(req, res, () => {
+        res.redirect("/secrets");
+      });
+    }
   });
+
 });
 
+app.get("/secrets", (req, res) => {
+  if(req.isAuthenticated()) res.render("secrets");
+  else res.redirect("/login");
+});
+
+app.get("/logout", (req, res) => {
+  req.logout();
+  res.redirect("/");
+});
 
 app.listen(3000, () => {
   console.log("Server running on port 3000");
